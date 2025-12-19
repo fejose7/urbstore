@@ -1,5 +1,6 @@
 
 import { Book, Seller, Order, UserAccount, UserRole } from './types';
+import { supabase, isSupabaseConfigured } from './supabaseClient';
 
 const STORAGE_KEYS = {
   BOOKS: 'ml_books',
@@ -16,35 +17,118 @@ const DEFAULT_ADMIN: UserAccount = {
   name: 'Felipe (Admin)'
 };
 
-// Camada de Serviço preparada para Supabase
+// Funções Auxiliares de LocalStorage
+const getLocal = (key: string) => JSON.parse(localStorage.getItem(key) || '[]');
+const setLocal = (key: string, data: any) => localStorage.setItem(key, JSON.stringify(data));
+
 export const db = {
+  // LIVROS / ESTOQUE
   getBooks: async (): Promise<Book[]> => {
-    return JSON.parse(localStorage.getItem(STORAGE_KEYS.BOOKS) || '[]');
+    if (isSupabaseConfigured()) {
+      const { data, error } = await supabase!.from('books').select('*');
+      if (!error) return data as Book[];
+    }
+    return getLocal(STORAGE_KEYS.BOOKS);
   },
   saveBooks: async (books: Book[]) => {
-    localStorage.setItem(STORAGE_KEYS.BOOKS, JSON.stringify(books));
-  },
-  
-  getSellers: async (): Promise<Seller[]> => {
-    return JSON.parse(localStorage.getItem(STORAGE_KEYS.SELLERS) || '[]');
-  },
-  saveSellers: async (sellers: Seller[]) => {
-    localStorage.setItem(STORAGE_KEYS.SELLERS, JSON.stringify(sellers));
-  },
-  
-  getOrders: async (): Promise<Order[]> => {
-    return JSON.parse(localStorage.getItem(STORAGE_KEYS.ORDERS) || '[]');
-  },
-  saveOrders: async (orders: Order[]) => {
-    localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(orders));
+    if (isSupabaseConfigured()) {
+      await supabase!.from('books').upsert(books);
+    }
+    setLocal(STORAGE_KEYS.BOOKS, books);
   },
 
+  // VENDEDORES
+  getSellers: async (): Promise<Seller[]> => {
+    if (isSupabaseConfigured()) {
+      const { data, error } = await supabase!.from('sellers').select('*');
+      if (!error) return data as Seller[];
+    }
+    return getLocal(STORAGE_KEYS.SELLERS);
+  },
+  saveSellers: async (sellers: Seller[]) => {
+    if (isSupabaseConfigured()) {
+      await supabase!.from('sellers').upsert(sellers);
+    }
+    setLocal(STORAGE_KEYS.SELLERS, sellers);
+  },
+
+  // PEDIDOS
+  getOrders: async (): Promise<Order[]> => {
+    if (isSupabaseConfigured()) {
+      const { data, error } = await supabase!.from('orders').select('*').order('date', { ascending: false });
+      if (!error) return data as Order[];
+    }
+    return getLocal(STORAGE_KEYS.ORDERS);
+  },
+  saveOrders: async (orders: Order[]) => {
+    if (isSupabaseConfigured()) {
+      // No Supabase real, você usaria .insert() ou .upsert() para o pedido específico
+      // Aqui mantemos a lógica de lote para compatibilidade com o estado atual do App
+      await supabase!.from('orders').upsert(orders);
+    }
+    setLocal(STORAGE_KEYS.ORDERS, orders);
+  },
+
+  // USUÁRIOS / ADMINS
   getUsers: async (): Promise<UserAccount[]> => {
-    const users = JSON.parse(localStorage.getItem(STORAGE_KEYS.USERS) || '[]');
-    if (users.length === 0) return [DEFAULT_ADMIN];
-    return users;
+    if (isSupabaseConfigured()) {
+      const { data, error } = await supabase!.from('users').select('*');
+      if (!error && data.length > 0) return data as UserAccount[];
+    }
+    const users = getLocal(STORAGE_KEYS.USERS);
+    return users.length === 0 ? [DEFAULT_ADMIN] : users;
   },
   saveUsers: async (users: UserAccount[]) => {
-    localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
+    if (isSupabaseConfigured()) {
+      await supabase!.from('users').upsert(users);
+    }
+    setLocal(STORAGE_KEYS.USERS, users);
   }
 };
+
+/* 
+  SQL PARA CRIAÇÃO NO SUPABASE (SQL EDITOR):
+
+  -- Tabela de Livros
+  create table books (
+    id uuid primary key default uuid_generate_v4(),
+    title text not null,
+    "costPrice" numeric not null,
+    "salePrice" numeric not null,
+    stock integer not null,
+    "isBundle" boolean default false,
+    "bundleItems" jsonb default '[]'::jsonb
+  );
+
+  -- Tabela de Vendedores
+  create table sellers (
+    id uuid primary key default uuid_generate_v4(),
+    username text unique not null,
+    password text not null,
+    role text not null,
+    name text not null,
+    email text,
+    phone text,
+    avatar text,
+    "commissionRate" numeric default 15
+  );
+
+  -- Tabela de Pedidos
+  create table orders (
+    id uuid primary key default uuid_generate_v4(),
+    date timestamp with time zone default now(),
+    customer jsonb not null,
+    items jsonb not null,
+    discount numeric default 0,
+    "shippingCost" numeric default 0,
+    "shippingType" text,
+    status text not null,
+    "sellerId" uuid references sellers(id),
+    "totalValue" numeric not null,
+    "totalCost" numeric not null,
+    "totalProfit" numeric not null,
+    "sellerCommission" numeric not null,
+    "receiptData" text,
+    "trackingNumber" text
+  );
+*/

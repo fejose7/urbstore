@@ -17,10 +17,14 @@ import {
   Camera,
   AlertCircle,
   Component as SheepIcon,
-  RefreshCw
+  RefreshCw,
+  Database,
+  Cloud,
+  Globe
 } from 'lucide-react';
 import { ViewType, Book, Seller, Order, UserAccount, UserRole, OrderStatus } from './types';
 import { db } from './db';
+import { isSupabaseConfigured } from './supabaseClient';
 import Dashboard from './components/Dashboard';
 import Inventory from './components/Inventory';
 import Sellers from './components/Sellers';
@@ -37,40 +41,73 @@ const App: React.FC = () => {
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [dbStatus, setDbStatus] = useState<'LOCAL' | 'CLOUD'>('LOCAL');
   
   const [books, setBooks] = useState<Book[]>([]);
   const [sellers, setSellers] = useState<Seller[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
 
-  // Carga inicial assíncrona
+  // Sincronização inicial e detecção de DB
   useEffect(() => {
-    const loadData = async () => {
+    const init = async () => {
       setIsLoading(true);
-      const [b, s, o] = await Promise.all([
-        db.getBooks(),
-        db.getSellers(),
-        db.getOrders()
-      ]);
-      setBooks(b);
-      setSellers(s);
-      setOrders(o);
-      setIsLoading(false);
+      setDbStatus(isSupabaseConfigured() ? 'CLOUD' : 'LOCAL');
+      
+      try {
+        const [b, s, o] = await Promise.all([
+          db.getBooks(),
+          db.getSellers(),
+          db.getOrders()
+        ]);
+        setBooks(b);
+        setSellers(s);
+        setOrders(o);
+      } catch (err) {
+        console.error("Falha na sincronização inicial:", err);
+      } finally {
+        setIsLoading(false);
+      }
     };
-    loadData();
+    init();
   }, []);
 
-  // Persistência assíncrona (Pre-Supabase)
-  useEffect(() => { if (!isLoading) db.saveBooks(books); }, [books]);
+  // Persistência Automática com Debounce implícito
   useEffect(() => { 
     if (!isLoading) {
-      db.saveSellers(sellers); 
-      if (currentUser?.role === UserRole.SELLER) {
-        const updatedMe = sellers.find(s => s.id === currentUser.id);
-        if (updatedMe) setCurrentUser({...updatedMe});
-      }
+      setIsSyncing(true);
+      const timer = setTimeout(() => {
+        db.saveBooks(books);
+        setIsSyncing(false);
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [books]);
+
+  useEffect(() => { 
+    if (!isLoading) {
+      setIsSyncing(true);
+      const timer = setTimeout(() => {
+        db.saveSellers(sellers);
+        if (currentUser?.role === UserRole.SELLER) {
+          const updatedMe = sellers.find(s => s.id === currentUser.id);
+          if (updatedMe) setCurrentUser({...updatedMe});
+        }
+        setIsSyncing(false);
+      }, 500);
+      return () => clearTimeout(timer);
     }
   }, [sellers]);
-  useEffect(() => { if (!isLoading) db.saveOrders(orders); }, [orders]);
+
+  useEffect(() => { 
+    if (!isLoading) {
+      setIsSyncing(true);
+      const timer = setTimeout(() => {
+        db.saveOrders(orders);
+        setIsSyncing(false);
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [orders]);
 
   const pendingPaymentsCount = useMemo(() => 
     orders.filter(o => o.status === OrderStatus.PENDING_PAYMENT).length, 
@@ -98,61 +135,30 @@ const App: React.FC = () => {
     }
     setIsProfileModalOpen(false);
     setIsSyncing(false);
-    alert("Perfil atualizado com sucesso!");
+    alert("Perfil sincronizado na nuvem!");
   };
 
   const navItems = [
-    { id: 'DASHBOARD', label: 'Painel Geral', icon: <LayoutDashboard size={20} />, roles: [UserRole.ADMIN, UserRole.SELLER] },
-    { id: 'NEW_ORDER', label: 'Lançar Venda', icon: <PlusCircle size={20} />, roles: [UserRole.ADMIN, UserRole.SELLER] },
+    { id: 'DASHBOARD', label: 'Dashboard', icon: <LayoutDashboard size={20} />, roles: [UserRole.ADMIN, UserRole.SELLER] },
+    { id: 'NEW_ORDER', label: 'Nova Venda', icon: <PlusCircle size={20} />, roles: [UserRole.ADMIN, UserRole.SELLER] },
     { 
       id: 'ORDERS', 
-      label: 'Lista de Pedidos', 
+      label: 'Vendas', 
       icon: <ShoppingCart size={20} />, 
       roles: [UserRole.ADMIN, UserRole.SELLER],
       badge: isAdmin && pendingPaymentsCount > 0 ? pendingPaymentsCount : null
     },
     { 
       id: 'SHIPPING', 
-      label: 'Envios Pendentes', 
+      label: 'Logística', 
       icon: <Truck size={20} />, 
       roles: [UserRole.ADMIN],
       badge: pendingShipmentsCount > 0 ? pendingShipmentsCount : null
     },
-    { id: 'INVENTORY', label: 'Estoque de Livros', icon: <BookOpen size={20} />, roles: [UserRole.ADMIN] },
-    { id: 'SELLERS', label: 'Vendedores', icon: <Users size={20} />, roles: [UserRole.ADMIN] },
+    { id: 'INVENTORY', label: 'Estoque', icon: <BookOpen size={20} />, roles: [UserRole.ADMIN] },
+    { id: 'SELLERS', label: 'Equipe', icon: <Users size={20} />, roles: [UserRole.ADMIN] },
     { id: 'REPORTS', label: 'Relatórios', icon: <BarChart3 size={20} />, roles: [UserRole.ADMIN] },
   ];
-
-  const renderContent = () => {
-    if (isLoading) return (
-      <div className="h-full flex flex-col items-center justify-center space-y-4">
-        <RefreshCw size={48} className="text-blue-600 animate-spin" />
-        <p className="font-black uppercase italic tracking-widest text-slate-400">Sincronizando Manus Libros...</p>
-      </div>
-    );
-
-    switch (currentView) {
-      case 'DASHBOARD':
-        return <Dashboard orders={orders} books={books} sellers={sellers} user={currentUser} />;
-      case 'INVENTORY':
-        return isAdmin ? <Inventory books={books} setBooks={setBooks} /> : null;
-      case 'SELLERS':
-        return isAdmin ? <Sellers sellers={sellers} setSellers={setSellers} /> : null;
-      case 'ORDERS':
-        return <Orders orders={orders} setOrders={setOrders} books={books} setBooks={setBooks} sellers={sellers} user={currentUser} />;
-      case 'SHIPPING':
-        return isAdmin ? <ShippingManager orders={orders} setOrders={setOrders} sellers={sellers} /> : null;
-      case 'NEW_ORDER':
-        return <NewOrder books={books} sellers={sellers} user={currentUser} onOrderCreated={(newOrder) => {
-          setOrders([newOrder, ...orders]);
-          setCurrentView('ORDERS');
-        }} />;
-      case 'REPORTS':
-        return isAdmin ? <Reports orders={orders} books={books} sellers={sellers} /> : null;
-      default:
-        return <Dashboard orders={orders} books={books} sellers={sellers} user={currentUser} />;
-    }
-  };
 
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden font-sans">
@@ -198,10 +204,15 @@ const App: React.FC = () => {
           ))}
         </nav>
 
-        <div className="p-4 bg-white/5 border-t border-white/10">
+        <div className="p-4 bg-white/5 border-t border-white/10 space-y-3">
+          <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest ${dbStatus === 'CLOUD' ? 'text-green-400 bg-green-400/10' : 'text-amber-400 bg-amber-400/10'}`}>
+             {dbStatus === 'CLOUD' ? <Globe size={12} /> : <Database size={12} />}
+             {isSidebarOpen && <span>DB: {dbStatus}</span>}
+          </div>
+          
           <button 
             onClick={() => setIsProfileModalOpen(true)}
-            className={`flex items-center gap-3 mb-4 w-full text-left p-2 rounded-xl hover:bg-white/10 transition-all ${!isSidebarOpen && 'justify-center'}`}
+            className={`flex items-center gap-3 w-full text-left p-2 rounded-xl hover:bg-white/10 transition-all ${!isSidebarOpen && 'justify-center'}`}
           >
             {currentUser.avatar ? (
               <img src={currentUser.avatar} className="w-10 h-10 rounded-full object-cover border-2 border-blue-500" alt="Avatar" />
@@ -228,7 +239,7 @@ const App: React.FC = () => {
         <header className="h-16 bg-white border-b flex items-center justify-between px-8 sticky top-0 z-20 shadow-sm">
           <div className="flex items-center space-x-2 text-slate-400 text-xs uppercase tracking-widest">
             <ShieldCheck size={14} className="text-blue-500" />
-            <span>Manus Libros Cloud</span>
+            <span>Manus {dbStatus === 'CLOUD' ? 'Cloud' : 'Local'}</span>
             <ChevronRight size={14} />
             <span className="font-black text-slate-900 uppercase">
               {navItems.find(i => i.id === currentView)?.label || 'Sistema'}
@@ -249,40 +260,67 @@ const App: React.FC = () => {
                     <span className="text-[10px] font-black text-amber-700 uppercase">{pendingPaymentsCount} Pagtos</span>
                   </div>
                 )}
+                {pendingShipmentsCount > 0 && (
+                  <div className="flex items-center gap-2 px-3 py-1 bg-blue-50 border border-blue-100 rounded-lg">
+                    <Truck size={14} className="text-blue-600" />
+                    <span className="text-[10px] font-black text-blue-700 uppercase">{pendingShipmentsCount} Envios</span>
+                  </div>
+                )}
               </div>
             )}
           </div>
         </header>
         
         <div className="p-8 max-w-7xl mx-auto">
-          {renderContent()}
+          {isLoading ? (
+            <div className="h-96 flex flex-col items-center justify-center space-y-6">
+              <div className="relative">
+                <SheepIcon size={80} className="text-slate-200" />
+                <RefreshCw size={40} className="text-blue-600 animate-spin absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
+              </div>
+              <p className="font-black uppercase italic tracking-[0.3em] text-slate-400 animate-pulse">Estabelecendo Conexão...</p>
+            </div>
+          ) : (
+            <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+              {currentView === 'DASHBOARD' && <Dashboard orders={orders} books={books} sellers={sellers} user={currentUser} />}
+              {currentView === 'INVENTORY' && <Inventory books={books} setBooks={setBooks} />}
+              {currentView === 'SELLERS' && <Sellers sellers={sellers} setSellers={setSellers} />}
+              {currentView === 'ORDERS' && <Orders orders={orders} setOrders={setOrders} books={books} setBooks={setBooks} sellers={sellers} user={currentUser} />}
+              {currentView === 'SHIPPING' && <ShippingManager orders={orders} setOrders={setOrders} sellers={sellers} />}
+              {currentView === 'NEW_ORDER' && <NewOrder books={books} sellers={sellers} user={currentUser} onOrderCreated={(newOrder) => {
+                setOrders([newOrder, ...orders]);
+                setCurrentView('ORDERS');
+              }} />}
+              {currentView === 'REPORTS' && <Reports orders={orders} books={books} sellers={sellers} />}
+            </div>
+          )}
         </div>
       </main>
 
       {isProfileModalOpen && (
-        <div className="fixed inset-0 z-[200] bg-slate-900/90 flex items-center justify-center p-4">
-          <div className="bg-slate-800 w-full max-w-md rounded-3xl shadow-2xl overflow-hidden border border-slate-700">
-            <div className="bg-slate-700 p-6 flex justify-between items-center">
-              <h3 className="text-white font-black text-lg uppercase tracking-widest italic flex items-center gap-2">
-                <Settings size={20} /> Perfil Cloud
+        <div className="fixed inset-0 z-[200] bg-slate-900/90 flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-slate-800 w-full max-w-md rounded-[2.5rem] shadow-2xl overflow-hidden border border-slate-700">
+            <div className="bg-slate-700 p-8 flex justify-between items-center">
+              <h3 className="text-white font-black text-lg uppercase tracking-widest italic flex items-center gap-3">
+                <Settings size={22} className="text-blue-400" /> Configuração Cloud
               </h3>
-              <button onClick={() => setIsProfileModalOpen(false)} className="text-slate-400 hover:text-white"><X size={20} /></button>
+              <button onClick={() => setIsProfileModalOpen(false)} className="text-slate-400 hover:text-white transition-colors"><X size={24} /></button>
             </div>
-            <form onSubmit={handleUpdateProfile} className="p-8 space-y-6">
-              <div className="space-y-4">
+            <form onSubmit={handleUpdateProfile} className="p-10 space-y-6">
+              <div className="space-y-5">
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Nome de Exibição</label>
-                  <input required className="w-full p-3 bg-slate-700 text-white border border-slate-600 rounded-xl outline-none" value={currentUser.name} onChange={e => setCurrentUser({...currentUser, name: e.target.value})} />
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nome na Rede</label>
+                  <input required className="w-full p-4 bg-slate-900 text-white border border-slate-700 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 font-bold" value={currentUser.name} onChange={e => setCurrentUser({...currentUser, name: e.target.value})} />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Nova Senha</label>
-                  <input required type="text" className="w-full p-3 bg-slate-700 text-white border border-slate-600 rounded-xl outline-none focus:ring-2 focus:ring-blue-500" value={currentUser.password || ''} onChange={e => setCurrentUser({...currentUser, password: e.target.value})} />
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Chave de Segurança</label>
+                  <input required type="password" placeholder="••••••••" className="w-full p-4 bg-slate-900 text-white border border-slate-700 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 font-bold" value={currentUser.password || ''} onChange={e => setCurrentUser({...currentUser, password: e.target.value})} />
                 </div>
               </div>
-              <div className="flex gap-4 pt-4 border-t border-slate-700">
-                <button type="button" onClick={() => setIsProfileModalOpen(false)} className="flex-1 py-4 text-slate-400 font-bold hover:text-white uppercase text-xs">Sair</button>
-                <button type="submit" disabled={isSyncing} className="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-black uppercase shadow-xl disabled:opacity-50">
-                  {isSyncing ? 'Salvando...' : 'Salvar Alterações'}
+              <div className="flex gap-4 pt-6 border-t border-slate-700">
+                <button type="button" onClick={() => setIsProfileModalOpen(false)} className="flex-1 py-4 text-slate-500 font-black hover:text-white uppercase text-xs tracking-widest">Fechar</button>
+                <button type="submit" disabled={isSyncing} className="flex-[2] py-5 bg-blue-600 text-white rounded-2xl font-black uppercase italic shadow-xl hover:bg-blue-500 disabled:opacity-50 transition-all">
+                  {isSyncing ? 'Sincronizando...' : 'Salvar na Nuvem'}
                 </button>
               </div>
             </form>
