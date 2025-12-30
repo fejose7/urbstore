@@ -1,7 +1,11 @@
 
 import React, { useMemo, useState } from 'react';
 import { Order, Book, OrderStatus, Seller } from '../types';
-import { TrendingUp, Wallet, ShoppingBag, Download, AlertCircle, Calendar, Filter, Users, UserX, CheckCircle, ChevronLeft, ChevronRight } from 'lucide-react';
+import { TrendingUp, Download, Calendar, Filter, Users, PieChart as PieChartIcon, BarChart as BarChartIcon, DollarSign, Wallet, Star } from 'lucide-react';
+import { 
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
+  PieChart, Pie, Cell 
+} from 'recharts';
 
 interface Props {
   orders: Order[];
@@ -13,26 +17,25 @@ const Reports: React.FC<Props> = ({ orders, books, sellers }) => {
   const [dateFilter, setDateFilter] = useState({ start: '', end: '' });
   const [sellerFilter, setSellerFilter] = useState('ALL');
 
+  const COLORS = ['#2563eb', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
+
   const filteredOrders = useMemo(() => {
     return orders.filter(o => {
-      const isPaid = o.status === OrderStatus.CONFIRMED || o.status === OrderStatus.SHIPPED;
-      
+      const isPaid = o.status !== OrderStatus.PENDING_PAYMENT;
       const orderDate = new Date(o.date);
-      orderDate.setHours(0, 0, 0, 0);
-
+      
       let inDateRange = true;
       if (dateFilter.start) {
         const start = new Date(dateFilter.start);
-        start.setHours(0, 0, 0, 0);
         if (orderDate < start) inDateRange = false;
       }
       if (dateFilter.end) {
         const end = new Date(dateFilter.end);
-        end.setHours(23, 59, 59, 999);
+        end.setHours(23, 59, 59);
         if (orderDate > end) inDateRange = false;
       }
       
-      const isCorrectSeller = sellerFilter === 'ALL' || (sellerFilter === 'NONE' ? o.sellerId === null : o.sellerId === sellerFilter);
+      const isCorrectSeller = sellerFilter === 'ALL' || o.sellerId === sellerFilter;
 
       return isPaid && inDateRange && isCorrectSeller;
     });
@@ -40,165 +43,137 @@ const Reports: React.FC<Props> = ({ orders, books, sellers }) => {
 
   const metrics = useMemo(() => {
     const revenue = filteredOrders.reduce((acc, o) => acc + o.totalValue, 0);
-    const cost = filteredOrders.reduce((acc, o) => acc + o.totalCost, 0);
     const profit = filteredOrders.reduce((acc, o) => acc + o.totalProfit, 0);
-    const commission = filteredOrders.reduce((acc, o) => acc + o.sellerCommission, 0);
+    const commissions = filteredOrders.reduce((acc, o) => acc + o.sellerCommission, 0);
+    const cost = filteredOrders.reduce((acc, o) => acc + o.totalCost, 0);
     
-    return { revenue, cost, profit, commission, netAfterCommission: profit - commission };
+    return { revenue, profit, commissions, cost, net: profit - commissions };
   }, [filteredOrders]);
 
-  const commissionReport = useMemo(() => {
-    const report: Record<string, { name: string, rate: number, totalSales: number, totalCommission: number }> = {};
-    
+  const chartData = useMemo(() => {
+    const data: Record<string, any> = {};
     filteredOrders.forEach(o => {
-      const id = o.sellerId || 'NONE';
-      if (!report[id]) {
-        const seller = sellers.find(s => s.id === o.sellerId);
-        report[id] = { 
-          name: id === 'NONE' ? 'Manus Direta' : (seller?.name || 'Inativo'), 
-          rate: id === 'NONE' ? 0 : (seller?.commissionRate || 0), 
-          totalSales: 0, 
-          totalCommission: 0 
-        };
-      }
-      report[id].totalSales += o.totalValue;
-      report[id].totalCommission += o.sellerCommission;
+      const seller = sellers.find(s => s.id === o.sellerId)?.name || 'Canal Direto';
+      if (!data[seller]) data[seller] = { name: seller, vendas: 0, comissao: 0 };
+      data[seller].vendas += o.totalValue;
+      data[seller].comissao += o.sellerCommission;
     });
-    
-    return Object.values(report).sort((a,b) => b.totalSales - a.totalSales);
+    return Object.values(data).sort((a,b) => b.vendas - a.vendas);
   }, [filteredOrders, sellers]);
 
+  const compositionData = [
+    { name: 'Custo de Produção', value: metrics.cost },
+    { name: 'Comissões Equipe', value: metrics.commissions },
+    { name: 'Lucro Disponível EP', value: metrics.net }
+  ].filter(d => d.value > 0);
+
   return (
-    <div className="space-y-8 pb-20">
+    <div className="space-y-8 pb-20 animate-in fade-in duration-500">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 no-print">
         <h2 className="text-3xl font-black uppercase italic tracking-tighter flex items-center gap-3">
-          <TrendingUp className="text-blue-600" size={32} /> urb_intelligence
+          <Star className="text-blue-600 fill-blue-600" size={32} /> Inteligência de Dados
         </h2>
-        <button onClick={() => window.print()} className="flex items-center gap-3 bg-slate-900 text-white px-10 py-5 rounded-2xl font-black shadow-2xl hover:bg-slate-800 transition-all active:scale-95 uppercase italic tracking-tighter text-sm">
-          <Download size={20} /> Exportar Fechamento
+        <button onClick={() => window.print()} className="bg-slate-900 text-white px-8 py-4 rounded-2xl font-black uppercase italic text-xs tracking-widest hover:bg-slate-800 transition-all shadow-xl leading-none flex items-center gap-3">
+          <Download size={16} /> Fechamento de Ciclo
         </button>
       </div>
 
-      {/* Seletor de Período via Calendário Visual */}
-      <div className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-xl shadow-slate-200/50 grid grid-cols-1 md:grid-cols-3 gap-10 no-print relative overflow-hidden">
-        <div className="absolute top-0 right-0 p-8 opacity-5"><Calendar size={120} /></div>
-        
-        <div className="space-y-4">
-          <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] flex items-center gap-2 italic">
-            <Calendar size={14} className="text-blue-500" /> Início do Período
-          </label>
-          <div className="relative group">
-            <input 
-              type="date" 
-              className="w-full p-5 bg-slate-50 border-2 border-slate-100 rounded-3xl font-black text-slate-700 outline-none focus:border-blue-500 focus:bg-white transition-all appearance-none cursor-pointer" 
-              value={dateFilter.start} 
-              onChange={e => setDateFilter({...dateFilter, start: e.target.value})} 
-            />
-          </div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 no-print">
+        <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-2">
+          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2 italic"><Calendar size={12} /> Data Início</label>
+          <input type="date" className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl font-bold" value={dateFilter.start} onChange={e => setDateFilter({...dateFilter, start: e.target.value})} />
         </div>
-
-        <div className="space-y-4">
-          <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] flex items-center gap-2 italic">
-            <Calendar size={14} className="text-blue-500" /> Final do Período
-          </label>
-          <div className="relative group">
-            <input 
-              type="date" 
-              className="w-full p-5 bg-slate-50 border-2 border-slate-100 rounded-3xl font-black text-slate-700 outline-none focus:border-blue-500 focus:bg-white transition-all appearance-none cursor-pointer" 
-              value={dateFilter.end} 
-              onChange={e => setDateFilter({...dateFilter, end: e.target.value})} 
-            />
-          </div>
+        <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-2">
+          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2 italic"><Calendar size={12} /> Data Final</label>
+          <input type="date" className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl font-bold" value={dateFilter.end} onChange={e => setDateFilter({...dateFilter, end: e.target.value})} />
         </div>
-
-        <div className="space-y-4">
-          <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] flex items-center gap-2 italic">
-            <Filter size={14} className="text-blue-500" /> Origem das Vendas
-          </label>
-          <select className="w-full p-5 bg-slate-50 border-2 border-slate-100 rounded-3xl font-black text-slate-700 outline-none focus:border-blue-500 focus:bg-white transition-all cursor-pointer" value={sellerFilter} onChange={e => setSellerFilter(e.target.value)}>
-            <option value="ALL">Todo o Time</option>
-            <option value="NONE">Apenas Manus Direta</option>
+        <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-2">
+          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2 italic"><Filter size={12} /> Filtro Canal</label>
+          <select className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl font-bold" value={sellerFilter} onChange={e => setSellerFilter(e.target.value)}>
+            <option value="ALL">Toda a Organização</option>
             {sellers.map(s => <option key={s.id} value={s.id}>{s.name.toUpperCase()}</option>)}
           </select>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="bg-white p-8 rounded-[2rem] border border-slate-100 shadow-sm group hover:border-blue-500 transition-all">
-          <div className="flex items-center gap-3 mb-4">
-             <div className="p-3 bg-blue-50 text-blue-600 rounded-xl group-hover:bg-blue-600 group-hover:text-white transition-all">
-                <ShoppingBag size={20} />
-             </div>
-             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">Vendas Pagas</p>
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        {[
+          { label: 'Faturamento Bruto', value: metrics.revenue, color: 'text-blue-600', icon: <DollarSign /> },
+          { label: 'Provisão Comissões', value: metrics.commissions, color: 'text-amber-600', icon: <Users /> },
+          { label: 'Lucro do Projeto', value: metrics.profit, color: 'text-green-600', icon: <TrendingUp /> },
+          { label: 'Resultado Final EP', value: metrics.net, color: 'text-slate-900', icon: <Wallet />, dark: true },
+        ].map((item, i) => (
+          <div key={i} className={`${item.dark ? 'bg-slate-900 text-white shadow-2xl' : 'bg-white text-slate-900'} p-6 rounded-[2rem] shadow-sm border border-slate-100 transition-transform hover:scale-105`}>
+            <p className={`text-[10px] font-black uppercase tracking-widest mb-1 ${item.dark ? 'text-blue-400' : 'text-slate-400'}`}>{item.label}</p>
+            <h4 className={`text-2xl font-black italic tracking-tighter ${!item.dark && item.color}`}>R$ {item.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</h4>
           </div>
-          <h4 className="text-3xl font-black text-slate-900 italic tracking-tighter">R$ {metrics.revenue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</h4>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 no-print">
+        <div className="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-xl h-[480px]">
+          <h3 className="font-black uppercase italic text-lg tracking-tighter mb-8 flex items-center gap-3">
+            <BarChartIcon size={20} className="text-blue-600" /> Vendas x Canal
+          </h3>
+          <ResponsiveContainer width="100%" height="80%">
+            <BarChart data={chartData}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+              <XAxis dataKey="name" fontSize={10} fontWeight="black" tick={{fill: '#64748b'}} axisLine={false} tickLine={false} />
+              <YAxis fontSize={10} fontWeight="black" tick={{fill: '#64748b'}} axisLine={false} tickLine={false} />
+              <Tooltip cursor={{fill: '#f8fafc'}} contentStyle={{borderRadius: '20px', border: 'none', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)', fontWeight: 'black', textTransform: 'uppercase', fontSize: '10px'}} />
+              <Bar dataKey="vendas" fill="#2563eb" radius={[10, 10, 0, 0]} name="Faturamento R$" />
+              <Bar dataKey="comissao" fill="#f59e0b" radius={[10, 10, 0, 0]} name="Comissão R$" />
+            </BarChart>
+          </ResponsiveContainer>
         </div>
 
-        <div className="bg-white p-8 rounded-[2rem] border border-slate-100 shadow-sm group hover:border-green-500 transition-all">
-          <div className="flex items-center gap-3 mb-4">
-             <div className="p-3 bg-green-50 text-green-600 rounded-xl group-hover:bg-green-600 group-hover:text-white transition-all">
-                <Wallet size={20} />
-             </div>
-             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">Lucro Bruto</p>
-          </div>
-          <h4 className="text-3xl font-black text-green-600 italic tracking-tighter">R$ {metrics.profit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</h4>
-        </div>
-
-        <div className="bg-white p-8 rounded-[2rem] border border-slate-100 shadow-sm group hover:border-amber-500 transition-all">
-          <div className="flex items-center gap-3 mb-4">
-             <div className="p-3 bg-amber-50 text-amber-600 rounded-xl group-hover:bg-amber-600 group-hover:text-white transition-all">
-                <AlertCircle size={20} />
-             </div>
-             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">Comissões</p>
-          </div>
-          <h4 className="text-3xl font-black text-amber-600 italic tracking-tighter">R$ {metrics.commission.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</h4>
-        </div>
-
-        <div className="bg-slate-900 text-white p-8 rounded-[2rem] shadow-2xl shadow-blue-900/20 group hover:bg-slate-800 transition-all">
-          <div className="flex items-center gap-3 mb-4">
-             <div className="p-3 bg-blue-600 text-white rounded-xl">
-                <CheckCircle size={20} />
-             </div>
-             <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest leading-none">Saldo Real Manus</p>
-          </div>
-          <h4 className="text-3xl font-black italic tracking-tighter">R$ {metrics.netAfterCommission.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</h4>
+        <div className="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-xl h-[480px]">
+          <h3 className="font-black uppercase italic text-lg tracking-tighter mb-8 flex items-center gap-3">
+            <PieChartIcon size={20} className="text-green-600" /> Distribuição de Margem EP
+          </h3>
+          <ResponsiveContainer width="100%" height="80%">
+            <PieChart>
+              <Pie data={compositionData} innerRadius={80} outerRadius={120} paddingAngle={8} dataKey="value" stroke="none">
+                {compositionData.map((_, index) => <Cell key={index} fill={COLORS[index % COLORS.length]} />)}
+              </Pie>
+              <Tooltip />
+              <Legend verticalAlign="bottom" iconType="circle" wrapperStyle={{paddingTop: '20px', fontWeight: 'black', textTransform: 'uppercase', fontSize: '10px'}} />
+            </PieChart>
+          </ResponsiveContainer>
         </div>
       </div>
 
-      <div className="bg-white rounded-[3rem] border border-slate-100 shadow-xl overflow-hidden">
+      <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-xl overflow-hidden">
         <div className="p-8 bg-slate-900 text-white flex justify-between items-center">
-          <h3 className="font-black uppercase italic tracking-[0.2em] text-sm flex items-center gap-3">
-             <Users size={22} className="text-blue-400" /> Demonstrativo de Performace e Comissionamento
+          <h3 className="font-black uppercase italic tracking-widest text-sm flex items-center gap-3 leading-none">
+            <Star size={20} className="text-blue-400 fill-blue-400" /> Demonstrativo Financeiro Evangelho Prático
           </h3>
         </div>
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto custom-scrollbar">
           <table className="w-full text-left">
             <thead>
-              <tr className="bg-slate-50 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] border-b">
-                <th className="p-6">Nome / Identificação Vendedor</th>
-                <th className="p-6 text-center">Taxa (%)</th>
-                <th className="p-6 text-right">Faturamento Gerado</th>
-                <th className="p-6 text-right text-blue-600 font-black">Provisão Comissão</th>
+              <tr className="bg-slate-50 text-[10px] font-black text-slate-500 uppercase tracking-widest border-b border-slate-100">
+                <th className="p-6">Representante / Canal</th>
+                <th className="p-6 text-right">Volume Processado</th>
+                <th className="p-6 text-right">Taxa Atribuída</th>
+                <th className="p-6 text-right">Provisão Comissão</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 text-sm font-bold">
-              {commissionReport.length > 0 ? commissionReport.map((rep, idx) => (
-                <tr key={idx} className="hover:bg-slate-50 transition-all">
-                  <td className="p-6">
-                    <span className="text-slate-900 italic uppercase font-black tracking-tight">{rep.name}</span>
-                  </td>
-                  <td className="p-6 text-center">
-                    <span className="bg-slate-100 text-slate-500 px-4 py-1.5 rounded-full text-[10px] font-black italic shadow-sm">{rep.rate}%</span>
-                  </td>
-                  <td className="p-6 text-right italic text-slate-400 font-bold">R$ {rep.totalSales.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
-                  <td className="p-6 text-right font-black text-blue-600 text-xl italic tracking-tighter">R$ {rep.totalCommission.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
-                </tr>
-              )) : (
+            <tbody className="divide-y divide-slate-50 font-bold text-sm">
+              {chartData.map((row, i) => {
+                const sellerInfo = sellers.find(s => s.name === row.name);
+                return (
+                  <tr key={i} className="hover:bg-slate-50/50 transition-colors">
+                    <td className="p-6 uppercase italic font-black text-slate-900 leading-none">{row.name}</td>
+                    <td className="p-6 text-right text-slate-400">R$ {row.vendas.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                    <td className="p-6 text-right font-black italic">{sellerInfo?.commissionRate || 0}%</td>
+                    <td className="p-6 text-right text-blue-600 font-black text-lg italic tracking-tighter">R$ {row.comissao.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                  </tr>
+                );
+              })}
+              {chartData.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="p-24 text-center">
-                    <AlertCircle size={48} className="mx-auto text-slate-100 mb-4" />
-                    <p className="text-slate-300 font-black uppercase italic tracking-[0.3em] text-xs">Sem dados para os filtros selecionados</p>
-                  </td>
+                  <td colSpan={4} className="p-20 text-center text-slate-300 font-black uppercase italic text-xs">Aguardando dados de fechamento</td>
                 </tr>
               )}
             </tbody>

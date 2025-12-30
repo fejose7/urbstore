@@ -1,5 +1,5 @@
 {
-  "name": "urb_store",
-  "description": "Sistema completo de gestão de estoque, vendas e comissões para livrarias, incluindo relatórios detalhados e etiquetas de envio.",
+  "name": "Evangelho Prático - Gestão de Pedidos",
+  "description": "Sistema profissional de gestão de vendas, estoque e logística para o projeto Evangelho Prático.",
   "requestFramePermissions": []
 }

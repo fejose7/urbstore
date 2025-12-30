@@ -206,18 +206,21 @@ const Inventory: React.FC<Props> = ({ books, setBooks }) => {
               <div className="grid grid-cols-2 gap-6">
                 <div className="space-y-2">
                   <label className={`text-[10px] font-black uppercase tracking-widest ml-1 ${errors.costPrice ? 'text-red-400' : 'text-slate-400'}`}>Custo (R$) *</label>
-                  <input type="number" step="0.01" className={`w-full p-4 bg-slate-700 text-white border rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 font-black italic ${errors.costPrice ? 'border-red-500 ring-2' : 'border-slate-600'}`} value={modalState.book?.costPrice || ''} onChange={e => setModalState({...modalState, book: {...modalState.book!, costPrice: e.target.value}})} />
+                  {/* Fixed: Convert e.target.value to Number to resolve 'string not assignable to number' error */}
+                  <input type="number" step="0.01" className={`w-full p-4 bg-slate-700 text-white border rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 font-black italic ${errors.costPrice ? 'border-red-500 ring-2' : 'border-slate-600'}`} value={modalState.book?.costPrice || ''} onChange={e => setModalState({...modalState, book: {...modalState.book!, costPrice: Number(e.target.value)}})} />
                 </div>
                 <div className="space-y-2">
                   <label className={`text-[10px] font-black uppercase tracking-widest ml-1 ${errors.salePrice ? 'text-red-400' : 'text-slate-400'}`}>Venda (R$) *</label>
-                  <input type="number" step="0.01" className={`w-full p-4 bg-slate-700 text-white border rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 font-black italic ${errors.salePrice ? 'border-red-500 ring-2' : 'border-slate-600'}`} value={modalState.book?.salePrice || ''} onChange={e => setModalState({...modalState, book: {...modalState.book!, salePrice: e.target.value}})} />
+                  {/* Fixed: Convert e.target.value to Number to resolve 'string not assignable to number' error */}
+                  <input type="number" step="0.01" className={`w-full p-4 bg-slate-700 text-white border rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 font-black italic ${errors.salePrice ? 'border-red-500 ring-2' : 'border-slate-600'}`} value={modalState.book?.salePrice || ''} onChange={e => setModalState({...modalState, book: {...modalState.book!, salePrice: Number(e.target.value)}})} />
                 </div>
               </div>
 
               {!modalState.book?.isBundle ? (
                 <div className="space-y-2">
                   <label className={`text-[10px] font-black uppercase tracking-widest ml-1 ${errors.stock ? 'text-red-400' : 'text-slate-400'}`}>Estoque Inicial *</label>
-                  <input type="number" className={`w-full p-4 bg-slate-700 text-white border rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 font-black ${errors.stock ? 'border-red-500 ring-2' : 'border-slate-600'}`} value={modalState.book?.stock || ''} onChange={e => setModalState({...modalState, book: {...modalState.book!, stock: e.target.value}})} />
+                  {/* Fixed: Convert e.target.value to Number to resolve 'string not assignable to number' error */}
+                  <input type="number" className={`w-full p-4 bg-slate-700 text-white border rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 font-black ${errors.stock ? 'border-red-500 ring-2' : 'border-slate-600'}`} value={modalState.book?.stock || ''} onChange={e => setModalState({...modalState, book: {...modalState.book!, stock: Number(e.target.value)}})} />
                 </div>
               ) : (
                 <div className="bg-amber-600/10 border border-amber-500/30 p-5 rounded-[1.5rem] flex items-center gap-4 text-amber-200">

@@ -14,13 +14,10 @@ import {
   ShieldCheck,
   Truck,
   Settings,
-  Camera,
-  AlertCircle,
-  Component as SheepIcon,
   RefreshCw,
   Database,
-  Cloud,
-  Globe
+  Globe,
+  Star
 } from 'lucide-react';
 import { ViewType, Book, Seller, Order, UserAccount, UserRole, OrderStatus } from './types';
 import { db } from './db';
@@ -47,7 +44,6 @@ const App: React.FC = () => {
   const [sellers, setSellers] = useState<Seller[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
 
-  // Sincronização inicial e detecção de DB
   useEffect(() => {
     const init = async () => {
       setIsLoading(true);
@@ -71,7 +67,6 @@ const App: React.FC = () => {
     init();
   }, []);
 
-  // Persistência Automática com Debounce implícito
   useEffect(() => { 
     if (!isLoading) {
       setIsSyncing(true);
@@ -81,22 +76,18 @@ const App: React.FC = () => {
       }, 500);
       return () => clearTimeout(timer);
     }
-  }, [books]);
+  }, [books, isLoading]);
 
   useEffect(() => { 
     if (!isLoading) {
       setIsSyncing(true);
       const timer = setTimeout(() => {
         db.saveSellers(sellers);
-        if (currentUser?.role === UserRole.SELLER) {
-          const updatedMe = sellers.find(s => s.id === currentUser.id);
-          if (updatedMe) setCurrentUser({...updatedMe});
-        }
         setIsSyncing(false);
       }, 500);
       return () => clearTimeout(timer);
     }
-  }, [sellers]);
+  }, [sellers, isLoading]);
 
   useEffect(() => { 
     if (!isLoading) {
@@ -107,7 +98,7 @@ const App: React.FC = () => {
       }, 500);
       return () => clearTimeout(timer);
     }
-  }, [orders]);
+  }, [orders, isLoading]);
 
   const pendingPaymentsCount = useMemo(() => 
     orders.filter(o => o.status === OrderStatus.PENDING_PAYMENT).length, 
@@ -135,11 +126,11 @@ const App: React.FC = () => {
     }
     setIsProfileModalOpen(false);
     setIsSyncing(false);
-    alert("Perfil sincronizado na nuvem!");
+    alert("Perfil atualizado!");
   };
 
   const navItems = [
-    { id: 'DASHBOARD', label: 'Dashboard', icon: <LayoutDashboard size={20} />, roles: [UserRole.ADMIN, UserRole.SELLER] },
+    { id: 'DASHBOARD', label: 'Início', icon: <LayoutDashboard size={20} />, roles: [UserRole.ADMIN, UserRole.SELLER] },
     { id: 'NEW_ORDER', label: 'Nova Venda', icon: <PlusCircle size={20} />, roles: [UserRole.ADMIN, UserRole.SELLER] },
     { 
       id: 'ORDERS', 
@@ -155,7 +146,7 @@ const App: React.FC = () => {
       roles: [UserRole.ADMIN],
       badge: pendingShipmentsCount > 0 ? pendingShipmentsCount : null
     },
-    { id: 'INVENTORY', label: 'Estoque', icon: <BookOpen size={20} />, roles: [UserRole.ADMIN] },
+    { id: 'INVENTORY', label: 'Catálogo', icon: <BookOpen size={20} />, roles: [UserRole.ADMIN] },
     { id: 'SELLERS', label: 'Equipe', icon: <Users size={20} />, roles: [UserRole.ADMIN] },
     { id: 'REPORTS', label: 'Relatórios', icon: <BarChart3 size={20} />, roles: [UserRole.ADMIN] },
   ];
@@ -166,10 +157,10 @@ const App: React.FC = () => {
         <div className="p-6 flex items-center justify-between border-b border-white/10">
           <div className="flex items-center gap-3 overflow-hidden">
             <div className="bg-white p-1.5 rounded-xl">
-              <SheepIcon size={24} className="text-slate-900" />
+              <Star size={24} className="text-slate-900 fill-slate-900" />
             </div>
             <h1 className={`font-black text-lg transition-all whitespace-nowrap tracking-tighter text-blue-400 ${!isSidebarOpen && 'scale-0 w-0'}`}>
-              Manus Libros
+              Evangelho Prático
             </h1>
           </div>
           <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="hover:bg-white/10 p-1 rounded">
@@ -177,7 +168,7 @@ const App: React.FC = () => {
           </button>
         </div>
 
-        <nav className="flex-1 px-4 py-6 space-y-1 overflow-y-auto">
+        <nav className="flex-1 px-4 py-6 space-y-1 overflow-y-auto custom-scrollbar">
           {navItems.filter(item => item.roles.includes(currentUser.role)).map((item) => (
             <button
               key={item.id}
@@ -207,20 +198,16 @@ const App: React.FC = () => {
         <div className="p-4 bg-white/5 border-t border-white/10 space-y-3">
           <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest ${dbStatus === 'CLOUD' ? 'text-green-400 bg-green-400/10' : 'text-amber-400 bg-amber-400/10'}`}>
              {dbStatus === 'CLOUD' ? <Globe size={12} /> : <Database size={12} />}
-             {isSidebarOpen && <span>DB: {dbStatus}</span>}
+             {isSidebarOpen && <span>{dbStatus === 'CLOUD' ? 'Cloud Ativo' : 'Offline Mode'}</span>}
           </div>
           
           <button 
             onClick={() => setIsProfileModalOpen(true)}
             className={`flex items-center gap-3 w-full text-left p-2 rounded-xl hover:bg-white/10 transition-all ${!isSidebarOpen && 'justify-center'}`}
           >
-            {currentUser.avatar ? (
-              <img src={currentUser.avatar} className="w-10 h-10 rounded-full object-cover border-2 border-blue-500" alt="Avatar" />
-            ) : (
-              <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center font-bold text-lg">
-                {currentUser.name.charAt(0)}
-              </div>
-            )}
+            <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center font-bold text-lg">
+              {currentUser.name.charAt(0)}
+            </div>
             {isSidebarOpen && (
               <div className="overflow-hidden">
                 <p className="text-sm font-bold truncate">{currentUser.name}</p>
@@ -239,10 +226,10 @@ const App: React.FC = () => {
         <header className="h-16 bg-white border-b flex items-center justify-between px-8 sticky top-0 z-20 shadow-sm">
           <div className="flex items-center space-x-2 text-slate-400 text-xs uppercase tracking-widest">
             <ShieldCheck size={14} className="text-blue-500" />
-            <span>Manus {dbStatus === 'CLOUD' ? 'Cloud' : 'Local'}</span>
+            <span>Evangelho Prático</span>
             <ChevronRight size={14} />
             <span className="font-black text-slate-900 uppercase">
-              {navItems.find(i => i.id === currentView)?.label || 'Sistema'}
+              {navItems.find(i => i.id === currentView)?.label || 'Início'}
             </span>
           </div>
           <div className="flex items-center gap-6">
@@ -252,33 +239,14 @@ const App: React.FC = () => {
                 <span className="text-[10px] font-black uppercase tracking-widest">Sincronizando...</span>
               </div>
             )}
-            {isAdmin && (pendingPaymentsCount > 0 || pendingShipmentsCount > 0) && (
-              <div className="flex gap-4">
-                {pendingPaymentsCount > 0 && (
-                  <div className="flex items-center gap-2 px-3 py-1 bg-amber-50 border border-amber-100 rounded-lg">
-                    <AlertCircle size={14} className="text-amber-600" />
-                    <span className="text-[10px] font-black text-amber-700 uppercase">{pendingPaymentsCount} Pagtos</span>
-                  </div>
-                )}
-                {pendingShipmentsCount > 0 && (
-                  <div className="flex items-center gap-2 px-3 py-1 bg-blue-50 border border-blue-100 rounded-lg">
-                    <Truck size={14} className="text-blue-600" />
-                    <span className="text-[10px] font-black text-blue-700 uppercase">{pendingShipmentsCount} Envios</span>
-                  </div>
-                )}
-              </div>
-            )}
           </div>
         </header>
         
         <div className="p-8 max-w-7xl mx-auto">
           {isLoading ? (
             <div className="h-96 flex flex-col items-center justify-center space-y-6">
-              <div className="relative">
-                <SheepIcon size={80} className="text-slate-200" />
-                <RefreshCw size={40} className="text-blue-600 animate-spin absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
-              </div>
-              <p className="font-black uppercase italic tracking-[0.3em] text-slate-400 animate-pulse">Estabelecendo Conexão...</p>
+              <RefreshCw size={48} className="text-blue-600 animate-spin" />
+              <p className="font-black uppercase italic tracking-[0.3em] text-slate-400">Carregando Evangelho Prático...</p>
             </div>
           ) : (
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -302,25 +270,21 @@ const App: React.FC = () => {
           <div className="bg-slate-800 w-full max-w-md rounded-[2.5rem] shadow-2xl overflow-hidden border border-slate-700">
             <div className="bg-slate-700 p-8 flex justify-between items-center">
               <h3 className="text-white font-black text-lg uppercase tracking-widest italic flex items-center gap-3">
-                <Settings size={22} className="text-blue-400" /> Configuração Cloud
+                <Settings size={22} className="text-blue-400" /> Perfil de Usuário
               </h3>
               <button onClick={() => setIsProfileModalOpen(false)} className="text-slate-400 hover:text-white transition-colors"><X size={24} /></button>
             </div>
             <form onSubmit={handleUpdateProfile} className="p-10 space-y-6">
               <div className="space-y-5">
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nome na Rede</label>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nome Exibição</label>
                   <input required className="w-full p-4 bg-slate-900 text-white border border-slate-700 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 font-bold" value={currentUser.name} onChange={e => setCurrentUser({...currentUser, name: e.target.value})} />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Chave de Segurança</label>
-                  <input required type="password" placeholder="••••••••" className="w-full p-4 bg-slate-900 text-white border border-slate-700 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 font-bold" value={currentUser.password || ''} onChange={e => setCurrentUser({...currentUser, password: e.target.value})} />
                 </div>
               </div>
               <div className="flex gap-4 pt-6 border-t border-slate-700">
                 <button type="button" onClick={() => setIsProfileModalOpen(false)} className="flex-1 py-4 text-slate-500 font-black hover:text-white uppercase text-xs tracking-widest">Fechar</button>
-                <button type="submit" disabled={isSyncing} className="flex-[2] py-5 bg-blue-600 text-white rounded-2xl font-black uppercase italic shadow-xl hover:bg-blue-500 disabled:opacity-50 transition-all">
-                  {isSyncing ? 'Sincronizando...' : 'Salvar na Nuvem'}
+                <button type="submit" className="flex-[2] py-5 bg-blue-600 text-white rounded-2xl font-black uppercase italic shadow-xl hover:bg-blue-500 transition-all">
+                  Salvar Alterações
                 </button>
               </div>
             </form>
